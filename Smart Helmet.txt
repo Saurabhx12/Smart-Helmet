@@ -1,0 +1,198 @@
+Smart Helmet
+
+#include <LiquidCrystal.h>
+#include <TinyGPS.h>
+#include <TimerOne.h>
+
+LiquidCrystal lcd(13, 5, 6, 7, 8, 9);
+const int ir_Sensor = 10;
+const int alcohol_Sensor = 11;
+const int vibration_Sensor = 12;
+const int led=3;
+TinyGPS gps;
+long lat, lon;
+bool ir_status = LOW;
+bool alcohol_Status = LOW;
+bool vibration_Status = LOW;
+
+int HBSensor = 4;
+int HBCount = 0;
+int HBCheck = 0;
+int TimeinSec = 0;
+int HBperMin = 0;
+int HBStartCheck = 0;
+
+void setup() {
+  pinMode(HBSensor, INPUT);
+  Timer1.initialize(800000);
+  Timer1.attachInterrupt(timerIsr);
+  lcd.clear();
+
+  pinMode(ir_Sensor, INPUT);
+  pinMode(alcohol_Sensor, INPUT);
+  pinMode(vibration_Sensor, INPUT);
+  pinMode(led,OUTPUT);
+  Serial.begin(9600);  // Serial for debugging
+  
+  lcd.begin(20, 4);
+  lcd.print("ACCIDENT DETECTION");
+  lcd.setCursor(3, 2);
+  lcd.print("SYSTEM");
+}
+
+void loop() {
+  delay(400);
+  lcd.clear();
+  ir_status = digitalRead(ir_Sensor);
+  
+  if (ir_status == HIGH) {
+      alcohol_Status = digitalRead(alcohol_Sensor);
+      delay(100);
+      
+      if (alcohol_Status == LOW) {
+        delay(200);
+        lcd.clear();
+        lcd.print("Alcohol not");
+        lcd.print(" Detected");
+        delay(300);
+        lcd.clear();
+        digitalWrite(3,LOW);
+        lcd.print("Vehicle Started");
+        delay(100);
+        lcd.clear();
+        lcd.print("Vehicle Running");
+
+        vibration_Status = digitalRead(vibration_Sensor);
+        delay(100);
+        
+        if (vibration_Status == HIGH) {
+          lcd.clear();
+          lcd.print("Accident Detected");
+          lcd.setCursor(3, 2);
+          lcd.print("Sending Msg");
+          delay(300);
+          while(1){
+            sendAccidentMessage();
+            trackHeartBeat();
+            delay(200);
+          }
+        }
+      } else {
+        lcd.clear();
+        Serial.print("Alcohol ");
+        Serial.println("Detected");
+        Serial.println("Drunk and Driving");
+        Serial.println("Location and Details");
+        gps_read();
+        digitalWrite(3,HIGH);
+        delay(100);
+        vibration_Status = digitalRead(vibration_Sensor);
+        delay(100);
+        while (vibration_Status == HIGH) {
+          lcd.clear();
+          lcd.print("Accident Detected");
+          lcd.setCursor(3, 2);
+          lcd.print("Sending Msg");
+          delay(100);
+          sendAccidentMessage();
+          trackHeartBeat();
+          delay(100);
+        }
+      }
+  } else {
+    lcd.clear();
+    lcd.println("Vehicle Off");
+    delay(200);
+  }
+}
+
+void sendAccidentMessage() {
+  delay(100);
+  Serial.println("Accident Detected");  // The SMS text
+  Serial.println("Location and Details");  // Additional text
+  gps_read();  // Call GPS read function to append location data
+}
+
+void gps_read() {
+  bool newData = false;
+  unsigned long chars;
+  unsigned short sentences, failed;
+  // For one second we parse GPS data and report some key values
+  for (unsigned long start = millis(); millis() - start < 1000;)
+  {
+    while (Serial.available())
+    {
+      char c = Serial.read();
+      //Serial.print(c);
+      if (gps.encode(c)) 
+        newData = true;  
+    }
+  }
+
+  if (newData)      //If newData is true
+  {
+    float flat, flon;
+    unsigned long age;
+    gps.f_get_position(&flat, &flon, &age);  
+    Serial.println("Name:XYZ");
+    Serial.println("Mobile:8142740941");
+    Serial.println("Address:29,ABC,321421"); 
+    Serial.print("Latitude = ");
+    Serial.println(flat == TinyGPS::GPS_INVALID_F_ANGLE ? 0.0 : flat, 6);
+    Serial.print("Longitude = ");
+    Serial.print(flon == TinyGPS::GPS_INVALID_F_ANGLE ? 0.0 : flon, 6);
+    Serial.println(" ");
+  }
+ 
+  Serial.println(failed);
+}
+
+void trackHeartBeat() {
+  lcd.clear();
+  lcd.setCursor(0, 3);
+  lcd.print("HB Counting ..");
+  HBStartCheck = 1;
+  lcd.setCursor(0, 0);
+  lcd.print("current HB : ");
+  lcd.setCursor(0, 1);
+  lcd.print("Time in sec : ");
+  lcd.setCursor(0, 2);
+  lcd.print("HB per min : ");
+
+
+  while (HBStartCheck == 1) {
+    if ((digitalRead(HBSensor) == HIGH) && (HBCheck == 0)) {
+      HBCount++;
+      HBCheck = 1;
+      lcd.setCursor(14, 0);
+      lcd.print(HBCount);
+      lcd.print(" ");
+    }
+
+    if ((digitalRead(HBSensor) == LOW) && (HBCheck == 1)) {
+      HBCheck = 0;
+    }
+    
+    if (TimeinSec == 10) {
+      HBperMin = HBCount * 6;
+      HBStartCheck = 0;
+      lcd.setCursor(14, 2);
+      lcd.print(HBperMin);
+      lcd.print(" ");
+      lcd.setCursor(0, 3);
+      HBCount = 0;
+      TimeinSec = 0;
+      delay(1000);
+    }
+    
+  }
+}
+
+void timerIsr() {
+  if (HBStartCheck == 1) {
+    TimeinSec++;
+    lcd.setCursor(14, 1);
+    lcd.print(TimeinSec);
+    lcd.print(" ");
+  }
+}
